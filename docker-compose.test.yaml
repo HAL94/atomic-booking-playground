@@ -1,0 +1,63 @@
+x-backend-test: &backend-test
+  build:
+    context: .
+    dockerfile: Dockerfile
+  volumes:
+    - ./app:/src/app:z
+    - ./tests:/src/tests:z
+    - ./alembic.ini:/src/alembic.ini:z
+    - ./migrations:/src/migrations:z
+    - ./pyproject.toml:/src/pyproject.toml:z
+
+
+services:
+  pytest:
+    <<: *backend-test
+    command: ["pytest", "-v"]
+    env_file:
+      ./tests/.env.pytest
+    depends_on:
+      db_test:
+        condition: service_healthy
+      migrator_test:
+        condition: service_completed_successfully
+    networks:
+      - test_network
+
+  db_test:
+    container_name: todo_app_db_test
+    image: postgres:17.4-alpine3.21
+    restart: "no"
+    environment:
+      - POSTGRES_PASSWORD=${PG_PW}
+      - POSTGRES_USER=${PG_USER}
+      - POSTGRES_DB=${PG_DB}
+      - PG_PORT=${PG_PORT}
+    env_file:
+      ./tests/.env.pytest
+    ports:
+      - 5433:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $PG_USER -d $PG_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - test_network
+
+
+  migrator_test:
+    <<: *backend-test
+    command: ["alembic", "upgrade", "head"]
+    env_file:
+      ./tests/.env.pytest
+    depends_on:
+      db_test:
+        condition: service_healthy
+    networks:
+      - test_network
+
+
+networks:
+  test_network:
+    driver: bridge

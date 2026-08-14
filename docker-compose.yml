@@ -1,0 +1,67 @@
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: runner
+  volumes:
+    - ./app:/src/app:z
+    - ./migrations:/src/migrations:z
+    - ./alembic.ini:/src/alembic.ini:z
+    - ./pyproject.toml:/src/pyproject.toml:z
+    - /src/.venv
+  depends_on:
+    postgres:
+      condition: service_healthy
+    migration:
+      condition: service_completed_successfully
+  networks:
+    - fast_network
+
+services:
+  backend:
+    <<: *backend
+    env_file:
+      - ./.env
+    ports:
+    - 8000:8000
+
+  postgres:
+    image: postgres:17.4-alpine3.21
+    environment:
+      POSTGRES_DB: ${PG_DB}
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PW}
+      POSTGRES_PORT: ${PG_PORT}
+    ports:
+      - 5432:5432
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data:z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $PG_SERVER -d $PG_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fast_network
+
+  migration:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    # This service should not restart after it has successfully completed its job
+    restart: "no"
+    env_file:
+      - ./.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis:
+    image: redis:latest
+    ports:
+      - 6380:6379
+    networks:
+      - fast_network
+
+networks:
+  fast_network:
+    driver: bridge
