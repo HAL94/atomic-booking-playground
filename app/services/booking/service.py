@@ -25,8 +25,8 @@ class BookingService(BaseService):
         """
         return await self._booking_repo.get_one([Booking.id == booking_id, Booking.user_id == user_id])
 
-    async def create_reservation(self, payload: CreateReservation, user_id: UUID) -> Optional[BookingBase]:
+    async def create_reservation(self, payload: CreateReservation, seat_id: UUID, user_id: UUID) -> Optional[BookingBase]:
         """
         Create a reservation (a temporary hold booking) for a given user
         """
-        return await self._reservation.reserve_booking(payload, user_id)
+        return await self._reservation.reserve_booking(payload, seat_id, user_id)

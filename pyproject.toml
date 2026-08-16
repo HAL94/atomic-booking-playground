@@ -19,6 +19,8 @@ dependencies = [
     "pytz>=2025.2",
     "redis>=7.1.0",
     "sqlalchemy>=2.0.41",
+    "taskiq[reload]>=0.12.4",
+    "taskiq-redis>=1.2.2",
     "uvicorn>=0.35.0",
 ]
 

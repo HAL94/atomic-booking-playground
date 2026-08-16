@@ -26,15 +26,15 @@ class ReservationHoldout(BaseService):
         self._seat_guard = SeatHoldGuard(self._booking_hold_ttl)
         self._redis = get_redis_client()
 
-    async def reserve_booking(self, payload: CreateReservation, user_id: UUID) -> BookingBase:
+    async def reserve_booking(self, payload: CreateReservation, seat_id: UUID, user_id: UUID) -> BookingBase:
         # STEP 1: Acquire a lock
-        acquired_reservation = await self._seat_guard.acquire_hold(payload.seat_id, user_id)
+        acquired_reservation = await self._seat_guard.acquire_hold(seat_id, user_id)
         if not acquired_reservation:
             raise HTTPException(detail="Seat is currently held by another user or already booked.", status_code=409)
 
         try:
             # STEP 2: ensure the record is available
-            is_held = await self._seat_repo.try_hold_seat(payload.seat_id)
+            is_held = await self._seat_repo.try_hold_seat(seat_id)
 
             if not is_held:
                 raise HTTPException(detail="Seat is no longer available.", status_code=409)
@@ -45,12 +45,12 @@ class ReservationHoldout(BaseService):
                     ticket_price=payload.ticket_price,
                     status=BookingStatus.PENDING,
                     user_id=user_id,
-                    seat_id=payload.seat_id,
+                    seat_id=seat_id,
                 )
             )
 
             await self.session.commit()
             return booking
         except Exception as e:
-            await self._seat_guard.release_hold(payload.seat_id)
+            await self._seat_guard.release_hold(seat_id)
             raise e

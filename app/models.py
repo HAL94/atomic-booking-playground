@@ -68,6 +68,7 @@ class Booking(Base):
     user: Mapped[User] = relationship(back_populates="bookings")
 
     seat_id: Mapped[UUID] = mapped_column(ForeignKey("seats.id", ondelete="SET NULL"), nullable=True)
+    seat: Mapped["Seat"] = relationship(back_populates="booking")
 
     __table_args__ = (
         Index(
@@ -88,3 +89,5 @@ class Seat(Base):
 
     is_booked: Mapped[bool] = mapped_column(server_default=text("false"))
     is_held: Mapped[bool] = mapped_column(server_default=text("false"))
+
+    booking: Mapped[Booking] = relationship(back_populates="seat")
