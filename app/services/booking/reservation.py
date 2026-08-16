@@ -3,7 +3,6 @@ from uuid import UUID
 
 from fastapi import HTTPException
 
-from app.dependencies.redis import get_redis_client
 from app.domain.booking import BookingBase, BookingStatus
 from app.dto.booking import CreateReservation
 from app.repositories.booking_repository import BookingRepository
@@ -24,7 +23,6 @@ class ReservationHoldout(BaseService):
         self._booking_repo = BookingRepository(session)
         self._seat_repo = SeatRepository(session)
         self._seat_guard = SeatHoldGuard(self._booking_hold_ttl)
-        self._redis = get_redis_client()
 
     async def reserve_booking(self, payload: CreateReservation, seat_id: UUID, user_id: UUID) -> BookingBase:
         # STEP 1: Acquire a lock

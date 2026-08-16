@@ -35,10 +35,10 @@ class BookingIdempotency:
         logger.info(f"[BookingIdempotency]: idempotency-key {idempotency_key}")
 
         redis_cache_key = self._checker.build_redis_key(
-            RedisTypeKey.CACHE, self._key_prefix, idempotency_key, str(user.id), str(seat_id)
+            RedisTypeKey.CACHE, self._key_prefix, idempotency_key, str(seat_id), str(user.id)
         )
         redis_lock_key = self._checker.build_redis_key(
-            RedisTypeKey.LOCK, self._key_prefix, idempotency_key, str(user.id), str(seat_id)
+            RedisTypeKey.LOCK, self._key_prefix, idempotency_key, str(seat_id), str(user.id)
         )
 
         result = await self._checker.check_idempotency(
