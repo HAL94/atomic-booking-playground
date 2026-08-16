@@ -1,6 +1,7 @@
 import json
 import logging
 from typing import Annotated, Optional
+from uuid import UUID
 
 from fastapi import Header, Request, Response
 
@@ -12,7 +13,7 @@ from app.domain.booking import BookingBase
 
 logger = logging.getLogger("uvicorn")
 
-BookingIdempotencyHeader = Annotated[Optional[str], Header(alias="Idempotency-Key")]
+BookingIdempotencyHeader = Annotated[str, Header(alias="Idempotency-Key")]
 
 
 class BookingIdempotency:
@@ -28,13 +29,14 @@ class BookingIdempotency:
         request: Request,
         response: Response,
         user: CurrentUser,
-        idempotency_key: BookingIdempotencyHeader = None,
+        seat_id: UUID,
+        idempotency_key: BookingIdempotencyHeader,
     ) -> Optional[BookingBase]:
         redis_cache_key = self._checker.build_redis_key(
-            RedisTypeKey.CACHE, self._key_prefix, idempotency_key, str(user.id)
+            RedisTypeKey.CACHE, self._key_prefix, idempotency_key, str(seat_id), str(user.id)
         )
         redis_lock_key = self._checker.build_redis_key(
-            RedisTypeKey.LOCK, self._key_prefix, idempotency_key, str(user.id)
+            RedisTypeKey.LOCK, self._key_prefix, idempotency_key, str(seat_id), str(user.id)
         )
 
         result = await self._checker.check_idempotency(

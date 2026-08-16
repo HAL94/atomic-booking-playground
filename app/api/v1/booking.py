@@ -24,12 +24,13 @@ async def get_booking(booking_id: UUID, user: CurrentUser, session: DbSession) -
     return AppResponse(data=result)
 
 
-@booking_router.post("/reserve", response_model=AppResponse[BookingBase])
+@booking_router.post("/reserve/{seat_id}", response_model=AppResponse[BookingBase])
 async def create_reservation(
     payload: CreateReservation,
     user: CurrentUser,
     session: DbSession,
     request: Request,
+    seat_id: UUID,
     cached_response: Optional[BookingBase] = Depends(BookingIdempotency()),
 ) -> AppResponse[BookingBase]:
     """
@@ -40,7 +41,7 @@ async def create_reservation(
 
     try:
         service = BookingService(session)
-        result = await service.create_reservation(payload, user.id)
+        result = await service.create_reservation(payload, seat_id, user.id)
         cache_key = getattr(request.state, "redis_cache_key", None)
         if cache_key:
             await BookingIdempotency.cache_booking_response(cache_key, result, status_code=201)

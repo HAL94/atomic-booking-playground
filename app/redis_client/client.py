@@ -62,7 +62,9 @@ class RedisClient:
     async def disconnect(self):
         """Disconnect the redis client"""
         try:
-            await self.disconnect()
+            if self._client is not None:
+                await self._client.aclose()
+                self._client = None
         except Exception as e:
             logger.error(f"An error occured disconnecting: {e} {traceback.format_exc()}")
 
