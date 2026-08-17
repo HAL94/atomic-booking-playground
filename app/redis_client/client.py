@@ -6,9 +6,7 @@ from typing import Any, Optional, Union
 import redis.asyncio as redis
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger("uvicorn")
-logger.setLevel(logging.INFO)
-
+logger = logging.getLogger(__name__)
 
 class RedisClientConfig(BaseModel):
     host: Optional[str] = Field(default="localhost")

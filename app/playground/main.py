@@ -1,80 +1,88 @@
-import asyncio
-from datetime import datetime
+import logging
+import traceback
+from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator, Self
 
-from sqlalchemy import and_, or_
-from sqlalchemy.orm import selectinload
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from app.api import api_router
+from app.core.config import Settings, get_settings
 from app.core.database import session_manager
-from app.domain.todo import TodoBase
-from app.models import Todo
-from app.repositories.todo_repository import TodoRepository
+from app.core.exceptions import AppException
+from app.core.logging import configure_logging
+from app.dependencies.redis import get_redis_client
+from app.models import *  # noqa: F403
+
+configure_logging()
+logger = logging.getLogger(__name__)
 
 
-async def run_pg():
-    async with session_manager.session() as session:
-        repo = TodoRepository(session=session)
+class FastApp(FastAPI):
+    def __init__(self, settings: Settings, **kwargs: Any):
+        self.settings = settings
+        kwargs.setdefault("lifespan", self._lifespan)
+        super().__init__(**kwargs)
 
-        # todo_counts = await repo.count()
-        # print(f"Count of todos: {todo_counts}")
+    @asynccontextmanager
+    async def _lifespan(self, _: Self, /) -> AsyncGenerator[None, Any]:
+        redis_client = get_redis_client()
+        await redis_client.connect()
+        yield
+        await session_manager.close()
+        await redis_client.disconnect()
 
-        # created_todo = await repo.create({ "title": "New Todo" }, commit=True)
-        # print(f"newly created todo: {created_todo}, {type(created_todo)}")
-
-        # todos_paginated_result = await repo.get_many(options=[selectinload(Todo.subtasks)])
-        # assert len(todos_paginated_result.result) == 5
-        # print(f"[TodoRepo] get_all: {todos_paginated_result}")
-
-        # await repo.create_many(
-        #     [
-        #         {"title": "First Task in batch"},
-        #         {"title": "Second Task in batch"},
-        #         {"title": "Third Task in batch"},
-        #         {"title": "Fourth Task in batch"},
-        #         {"title": "Fifth Task in batch"},
-        #     ],
-        #     commit=False,
-        # )
-        # await repo.create_one()
-        # exists_ = await repo.exists(
-        #     [Todo.created_at.between(datetime(2026, 4, 1), datetime(2026, 4, 30))], as_not_exists=True
-        # )
-        # print(f"Do we have records with title like 'Task'? {'YES' if exists_ else 'NO'}")
-        # april_todos = Todo.created_at.between(datetime(2026, 2, 1), datetime(2026, 4, 28))
-        # contains_task_keyword = Todo.title.ilike("%item%")
-
-        # paginated_result = await repo.get_many(
-        #     where_clause=[or_(april_todos, contains_task_keyword)],
-        #     order_clause=[Todo.created_at.desc()],
-        #     options=[selectinload(Todo.subtasks)],
-        # )
-
-        # updated_todos = await repo.update_many_by_where([april_todos], {"title": "April Task"})
-        # print(f"updated_todos: {updated_todos}")
-
-        # result = await repo.update_many_by_pk(
-        #     [
-        #         TodoBase(id=45, title="April task in pydantic"),
-        #         {"title": "April Task 2", "id": 46},
-        #         {"title": "April Task 3", "id": 47},
-        #     ]
-        # )
-        # await session.commit()
-        # result = await repo.update(TodoBase(id=45, title="April Task (edit)"), [Todo.id == 45])
-        # print(Todo.columns())
-        # result = await repo.delete([], commit=True)
-        # await session.commit()
-        # print(f"Result: {result}")
-        result = await repo.update_many_by_pk(
-            [
-                TodoBase(id=56, title="April task 56th (edit 11)"),
-                TodoBase(id=61, title="April Task 57 (edit 22)"),
-                TodoBase(id=62, title="New April Task (edit 33)"),
-            ],
+    def _setup_middlewares(self) -> None:
+        self.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
         )
-        await session.commit()
 
-        print(f"Result: {result}")
+    def _setup_routers(self) -> None:
+        self.include_router(api_router)
+
+    def _setup_exception_handlers(self) -> None:
+        tb_str = traceback.format_exc()
+
+        def exception_handler(exc: Exception):
+            if isinstance(exc, AppException):
+                content = exc.dict()
+            elif isinstance(exc, HTTPException):
+                content = AppException(status_code=exc.status_code, message=exc.detail).dict()
+            else:
+                message = str(exc) if self.settings.ENV == "dev" else "Internal Server Error"
+                content = AppException(status_code=500, message=message).dict()
+
+            status_code = getattr(exc, "status_code", 500)
+
+            return JSONResponse(content=content, status_code=status_code)
+
+        @self.exception_handler(Exception)
+        async def global_handler(request: Request, exc: Exception):
+            logger.error(
+                f"Method: {request.method}. Request Failed: URL: {request.url}. Error: {str(exc)}. Traceback:\n{tb_str}"
+            )
+            return exception_handler(exc)
+
+        @self.exception_handler(HTTPException)
+        async def http_handler(request: Request, exc: HTTPException):
+            logger.error(f"Exception at handler: {exc}")
+
+            logger.error(
+                f"Method: {request.method}. Request Failed: URL: {request.url}. Error: {str(exc)}. Traceback:\n{tb_str}"
+            )
+            return exception_handler(exc)
+
+    def setup(self) -> None:
+        super().setup()
+
+        self._setup_exception_handlers()
+        self._setup_middlewares()
+        self._setup_routers()
 
 
-if __name__ == "__main__":
-    asyncio.run(run_pg())
+app = FastApp(settings=get_settings())
