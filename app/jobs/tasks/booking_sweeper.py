@@ -9,7 +9,6 @@ from app.jobs.deps import TdbSession
 from app.models import Booking, Seat
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 @broker.task(schedule=[{"interval": 10}])

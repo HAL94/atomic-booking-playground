@@ -1,79 +1,78 @@
 import asyncio
-from datetime import datetime
+import logging
+from uuid import UUID
 
-from sqlalchemy import and_, or_
-from sqlalchemy.orm import selectinload
+from sqlalchemy import update
 
 from app.core.database import session_manager
-from app.domain.todo import TodoBase
-from app.models import Todo
-from app.repositories.todo_repository import TodoRepository
+from app.core.logging import configure_logging
+from app.domain.booking import BookingBase
+from app.domain.booking_status import BookingStatus
+from app.models import Seat
+from app.repositories.booking_repository import BookingRepository
+
+configure_logging()
+
+logger = logging.getLogger(__name__)
 
 
 async def run_pg():
     async with session_manager.session() as session:
-        repo = TodoRepository(session=session)
+        booking_repo = BookingRepository(session)
 
-        # todo_counts = await repo.count()
-        # print(f"Count of todos: {todo_counts}")
-
-        # created_todo = await repo.create({ "title": "New Todo" }, commit=True)
-        # print(f"newly created todo: {created_todo}, {type(created_todo)}")
-
-        # todos_paginated_result = await repo.get_many(options=[selectinload(Todo.subtasks)])
-        # assert len(todos_paginated_result.result) == 5
-        # print(f"[TodoRepo] get_all: {todos_paginated_result}")
-
-        # await repo.create_many(
-        #     [
-        #         {"title": "First Task in batch"},
-        #         {"title": "Second Task in batch"},
-        #         {"title": "Third Task in batch"},
-        #         {"title": "Fourth Task in batch"},
-        #         {"title": "Fifth Task in batch"},
-        #     ],
-        #     commit=False,
-        # )
-        # await repo.create_one()
-        # exists_ = await repo.exists(
-        #     [Todo.created_at.between(datetime(2026, 4, 1), datetime(2026, 4, 30))], as_not_exists=True
-        # )
-        # print(f"Do we have records with title like 'Task'? {'YES' if exists_ else 'NO'}")
-        # april_todos = Todo.created_at.between(datetime(2026, 2, 1), datetime(2026, 4, 28))
-        # contains_task_keyword = Todo.title.ilike("%item%")
-
-        # paginated_result = await repo.get_many(
-        #     where_clause=[or_(april_todos, contains_task_keyword)],
-        #     order_clause=[Todo.created_at.desc()],
-        #     options=[selectinload(Todo.subtasks)],
-        # )
-
-        # updated_todos = await repo.update_many_by_where([april_todos], {"title": "April Task"})
-        # print(f"updated_todos: {updated_todos}")
-
-        # result = await repo.update_many_by_pk(
-        #     [
-        #         TodoBase(id=45, title="April task in pydantic"),
-        #         {"title": "April Task 2", "id": 46},
-        #         {"title": "April Task 3", "id": 47},
-        #     ]
-        # )
-        # await session.commit()
-        # result = await repo.update(TodoBase(id=45, title="April Task (edit)"), [Todo.id == 45])
-        # print(Todo.columns())
-        # result = await repo.delete([], commit=True)
-        # await session.commit()
-        # print(f"Result: {result}")
-        result = await repo.update_many_by_pk(
+        await booking_repo.upsert(
             [
-                TodoBase(id=56, title="April task 56th (edit 11)"),
-                TodoBase(id=61, title="April Task 57 (edit 22)"),
-                TodoBase(id=62, title="New April Task (edit 33)"),
+                BookingBase(
+                    id="649cabca-e315-44fe-bd03-c6f819a3c7f0",
+                    status=BookingStatus.PENDING,
+                    ticket_price=9.99,
+                    user_id=UUID("ebb0e51e-372e-4d56-8e7c-eb7f085657cf"),
+                    seat_id=UUID("5a3b417c-9e16-4f3e-b43d-b1024994b616"),
+                ),
+                BookingBase(
+                    id="649cabca-e315-44fe-bd03-c6f819a3c7f1",
+                    ticket_price=9.99,
+                    status=BookingStatus.PENDING,
+                    user_id=UUID("ebb0e51e-372e-4d56-8e7c-eb7f085657cf"),
+                    seat_id=UUID("5a3b417c-9e16-4f3e-b43d-b1024994b617"),
+                ),
+                BookingBase(
+                    id="649cabca-e315-44fe-bd03-c6f819a3c7f2",
+                    ticket_price=9.99,
+                    status=BookingStatus.PENDING,
+                    user_id=UUID("ebb0e51e-372e-4d56-8e7c-eb7f085657cf"),
+                    seat_id=UUID("5a3b417c-9e16-4f3e-b43d-b1024994b618"),
+                ),
+                BookingBase(
+                    id="649cabca-e315-44fe-bd03-c6f819a3c7f3",
+                    ticket_price=9.99,
+                    status=BookingStatus.PENDING,
+                    user_id=UUID("efd78619-f6b4-42d7-ad27-0cc948a8d795"),
+                    seat_id=UUID("5a3b417c-9e16-4f3e-b43d-b1024994b619"),
+                ),
+                BookingBase(
+                    id="649cabca-e315-44fe-bd03-c6f819a3c7f4",
+                    ticket_price=9.99,
+                    status=BookingStatus.PENDING,
+                    user_id=UUID("efd78619-f6b4-42d7-ad27-0cc948a8d795"),
+                    seat_id=UUID("5a3b417c-9e16-4f3e-b43d-b1024994b620"),
+                ),
+                BookingBase(
+                    id="649cabca-e315-44fe-bd03-c6f819a3c7f5",
+                    ticket_price=9.99,
+                    status=BookingStatus.PENDING,
+                    user_id=UUID("efd78619-f6b4-42d7-ad27-0cc948a8d795"),
+                    seat_id=UUID("5a3b417c-9e16-4f3e-b43d-b1024994b621"),
+                ),
             ],
         )
+
+        stmt = update(Seat).values(is_held=True)
+        await session.execute(stmt)
+
         await session.commit()
 
-        print(f"Result: {result}")
+        logger.info("[Playground]: finished..")
 
 
 if __name__ == "__main__":
