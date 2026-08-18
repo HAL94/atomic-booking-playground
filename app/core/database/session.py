@@ -1,5 +1,6 @@
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
+from typing import Any
 
 from sqlalchemy import URL
 from sqlalchemy.ext.asyncio import (
@@ -34,7 +35,7 @@ class SessionManager:
         self._session_maker = None
 
     @asynccontextmanager
-    async def session(self) -> AsyncIterator[AsyncSession]:
+    async def session(self) -> AsyncGenerator[AsyncSession]:
         if self._session_maker is None:
             raise Exception("DatabaseSessionManager is not initialized")
 

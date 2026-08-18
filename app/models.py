@@ -88,3 +88,15 @@ class Seat(Base):
 
     is_booked: Mapped[bool] = mapped_column(server_default=text("false"))
     is_held: Mapped[bool] = mapped_column(server_default=text("false"))
+
+
+class JobLedger(Base):
+    __tablename__ = "job_ledgers"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    job_name: Mapped[str] = mapped_column()
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(index=True)
+    worker_id: Mapped[str] = mapped_column()
+    error_log: Mapped[str] = mapped_column(nullable=True)

@@ -1,88 +1,79 @@
+import asyncio
 import logging
-import traceback
-from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Self
+from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from sqlalchemy import update
 
-from app.api import api_router
-from app.core.config import Settings, get_settings
 from app.core.database import session_manager
-from app.core.exceptions import AppException
 from app.core.logging import configure_logging
-from app.dependencies.redis import get_redis_client
-from app.models import *  # noqa: F403
+from app.domain.booking import BookingBase
+from app.domain.booking_status import BookingStatus
+from app.models import Seat
+from app.repositories.booking_repository import BookingRepository
 
 configure_logging()
+
 logger = logging.getLogger(__name__)
 
 
-class FastApp(FastAPI):
-    def __init__(self, settings: Settings, **kwargs: Any):
-        self.settings = settings
-        kwargs.setdefault("lifespan", self._lifespan)
-        super().__init__(**kwargs)
+async def run_pg():
+    async with session_manager.session() as session:
+        booking_repo = BookingRepository(session)
 
-    @asynccontextmanager
-    async def _lifespan(self, _: Self, /) -> AsyncGenerator[None, Any]:
-        redis_client = get_redis_client()
-        await redis_client.connect()
-        yield
-        await session_manager.close()
-        await redis_client.disconnect()
-
-    def _setup_middlewares(self) -> None:
-        self.add_middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
+        await booking_repo.upsert(
+            [
+                BookingBase(
+                    id="649cabca-e315-44fe-bd03-c6f819a3c7f0",
+                    status=BookingStatus.PENDING,
+                    ticket_price=9.99,
+                    user_id=UUID("ebb0e51e-372e-4d56-8e7c-eb7f085657cf"),
+                    seat_id=UUID("5a3b417c-9e16-4f3e-b43d-b1024994b616"),
+                ),
+                BookingBase(
+                    id="649cabca-e315-44fe-bd03-c6f819a3c7f1",
+                    ticket_price=9.99,
+                    status=BookingStatus.PENDING,
+                    user_id=UUID("ebb0e51e-372e-4d56-8e7c-eb7f085657cf"),
+                    seat_id=UUID("5a3b417c-9e16-4f3e-b43d-b1024994b617"),
+                ),
+                BookingBase(
+                    id="649cabca-e315-44fe-bd03-c6f819a3c7f2",
+                    ticket_price=9.99,
+                    status=BookingStatus.PENDING,
+                    user_id=UUID("ebb0e51e-372e-4d56-8e7c-eb7f085657cf"),
+                    seat_id=UUID("5a3b417c-9e16-4f3e-b43d-b1024994b618"),
+                ),
+                BookingBase(
+                    id="649cabca-e315-44fe-bd03-c6f819a3c7f3",
+                    ticket_price=9.99,
+                    status=BookingStatus.PENDING,
+                    user_id=UUID("efd78619-f6b4-42d7-ad27-0cc948a8d795"),
+                    seat_id=UUID("5a3b417c-9e16-4f3e-b43d-b1024994b619"),
+                ),
+                BookingBase(
+                    id="649cabca-e315-44fe-bd03-c6f819a3c7f4",
+                    ticket_price=9.99,
+                    status=BookingStatus.PENDING,
+                    user_id=UUID("efd78619-f6b4-42d7-ad27-0cc948a8d795"),
+                    seat_id=UUID("5a3b417c-9e16-4f3e-b43d-b1024994b620"),
+                ),
+                BookingBase(
+                    id="649cabca-e315-44fe-bd03-c6f819a3c7f5",
+                    ticket_price=9.99,
+                    status=BookingStatus.PENDING,
+                    user_id=UUID("efd78619-f6b4-42d7-ad27-0cc948a8d795"),
+                    seat_id=UUID("5a3b417c-9e16-4f3e-b43d-b1024994b621"),
+                ),
+            ],
         )
 
-    def _setup_routers(self) -> None:
-        self.include_router(api_router)
+        stmt = update(Seat).values(is_held=True)
+        await session.execute(stmt)
 
-    def _setup_exception_handlers(self) -> None:
-        tb_str = traceback.format_exc()
+        await session.commit()
 
-        def exception_handler(exc: Exception):
-            if isinstance(exc, AppException):
-                content = exc.dict()
-            elif isinstance(exc, HTTPException):
-                content = AppException(status_code=exc.status_code, message=exc.detail).dict()
-            else:
-                message = str(exc) if self.settings.ENV == "dev" else "Internal Server Error"
-                content = AppException(status_code=500, message=message).dict()
-
-            status_code = getattr(exc, "status_code", 500)
-
-            return JSONResponse(content=content, status_code=status_code)
-
-        @self.exception_handler(Exception)
-        async def global_handler(request: Request, exc: Exception):
-            logger.error(
-                f"Method: {request.method}. Request Failed: URL: {request.url}. Error: {str(exc)}. Traceback:\n{tb_str}"
-            )
-            return exception_handler(exc)
-
-        @self.exception_handler(HTTPException)
-        async def http_handler(request: Request, exc: HTTPException):
-            logger.error(f"Exception at handler: {exc}")
-
-            logger.error(
-                f"Method: {request.method}. Request Failed: URL: {request.url}. Error: {str(exc)}. Traceback:\n{tb_str}"
-            )
-            return exception_handler(exc)
-
-    def setup(self) -> None:
-        super().setup()
-
-        self._setup_exception_handlers()
-        self._setup_middlewares()
-        self._setup_routers()
+        logger.info("[Playground]: finished..")
 
 
-app = FastApp(settings=get_settings())
+if __name__ == "__main__":
+    asyncio.run(run_pg())
