@@ -1,88 +1,78 @@
+import asyncio
 import logging
-import traceback
-from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Self
+from datetime import datetime, timedelta
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-
-from app.api import api_router
-from app.core.config import Settings, get_settings
 from app.core.database import session_manager
-from app.core.exceptions import AppException
 from app.core.logging import configure_logging
-from app.dependencies.redis import get_redis_client
+from app.core.security.jwt import hash_password
+from app.domain.auction import AuctionBase
+from app.domain.auth import UserBase
+from app.domain.bid_status import BidStatus
 from app.models import *  # noqa: F403
+from app.repositories.auction_repository import AuctionRepository
+from app.repositories.user_repository import UserRepository
 
 configure_logging()
 logger = logging.getLogger(__name__)
 
 
-class FastApp(FastAPI):
-    def __init__(self, settings: Settings, **kwargs: Any):
-        self.settings = settings
-        kwargs.setdefault("lifespan", self._lifespan)
-        super().__init__(**kwargs)
-
-    @asynccontextmanager
-    async def _lifespan(self, _: Self, /) -> AsyncGenerator[None, Any]:
-        redis_client = get_redis_client()
-        await redis_client.connect()
-        yield
-        await session_manager.close()
-        await redis_client.disconnect()
-
-    def _setup_middlewares(self) -> None:
-        self.add_middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
+async def main_pg():
+    async with session_manager.session() as session:
+        _auction_repo = AuctionRepository(session)
+        _user_repo = UserRepository(session)
+        u1 = UserBase(
+            id="3cd57e13-93e1-4d54-ac68-a23a541b9476",
+            full_name="James Brown",
+            email="u1@example.com",
+            hashed_password=hash_password("123456"),
         )
+        u2 = UserBase(
+            id="3cd57e13-93e1-4d54-ac68-a23a541b9477",
+            full_name="Jason Limbu",
+            email="u2@example.com",
+            hashed_password=hash_password("123456"),
+        )
+        bidder_u1 = UserBase(
+            id="3cd57e13-93e1-4d54-ac68-a23a541b9478",
+            full_name="Bidder One",
+            email="bu1@example.com",
+            hashed_password=hash_password("123456"),
+        )
+        bidder_u2 = UserBase(
+            id="3cd57e13-93e1-4d54-ac68-a23a541b9479",
+            full_name="Bidder Two",
+            email="bu2@example.com",
+            hashed_password=hash_password("123456"),
+        )
+        await _user_repo.upsert([u1, u2, bidder_u1, bidder_u2])
+        await _auction_repo.upsert(
+            [
+                AuctionBase(
+                    id="6b91fa86-c200-4845-94f0-b221b2065e21",
+                    name="PS1 Vinteage Auction",
+                    scheduled_at=datetime.now() + timedelta(days=1),
+                    auction_owner_id=u1.id,
+                    status=BidStatus.SCHEDULED,
+                ),
+                AuctionBase(
+                    id="6b91fa86-c200-4845-94f0-b221b2065e22",
+                    name="PS2 Vinteage Auction",
+                    scheduled_at=datetime.now() + timedelta(days=2),
+                    auction_owner_id=u2.id,
+                    status=BidStatus.SCHEDULED,
+                ),
+                AuctionBase(
+                    id="6b91fa86-c200-4845-94f0-b221b2065e23",
+                    name="Classic Chevrolet Caprice 1988",
+                    scheduled_at=datetime.now() + timedelta(days=10),
+                    auction_owner_id=u1.id,
+                    status=BidStatus.SCHEDULED,
+                ),
+            ]
+        )
+        await session.commit()
+        logger.info("[Seeder]: finished..")
 
-    def _setup_routers(self) -> None:
-        self.include_router(api_router)
 
-    def _setup_exception_handlers(self) -> None:
-        tb_str = traceback.format_exc()
-
-        def exception_handler(exc: Exception):
-            if isinstance(exc, AppException):
-                content = exc.dict()
-            elif isinstance(exc, HTTPException):
-                content = AppException(status_code=exc.status_code, message=exc.detail).dict()
-            else:
-                message = str(exc) if self.settings.ENV == "dev" else "Internal Server Error"
-                content = AppException(status_code=500, message=message).dict()
-
-            status_code = getattr(exc, "status_code", 500)
-
-            return JSONResponse(content=content, status_code=status_code)
-
-        @self.exception_handler(Exception)
-        async def global_handler(request: Request, exc: Exception):
-            logger.error(
-                f"Method: {request.method}. Request Failed: URL: {request.url}. Error: {str(exc)}. Traceback:\n{tb_str}"
-            )
-            return exception_handler(exc)
-
-        @self.exception_handler(HTTPException)
-        async def http_handler(request: Request, exc: HTTPException):
-            logger.error(f"Exception at handler: {exc}")
-
-            logger.error(
-                f"Method: {request.method}. Request Failed: URL: {request.url}. Error: {str(exc)}. Traceback:\n{tb_str}"
-            )
-            return exception_handler(exc)
-
-    def setup(self) -> None:
-        super().setup()
-
-        self._setup_exception_handlers()
-        self._setup_middlewares()
-        self._setup_routers()
-
-
-app = FastApp(settings=get_settings())
+if __name__ == "__main__":
+    asyncio.run(main_pg())

@@ -2,13 +2,12 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, WriteOnlyMapped, mapped_column, relationship
 
 from app.constants.roles import UserRole
 from app.core.database import Base
-from app.domain.booking_status import BookingStatus
 
 
 class User(Base):
@@ -24,7 +23,8 @@ class User(Base):
 
     # Relations
     sessions: Mapped[List["Session"]] = relationship(back_populates="user", cascade="all, delete")
-    bookings: Mapped[list["Booking"]] = relationship(back_populates="user")
+    bids: WriteOnlyMapped["Bid"] = relationship(back_populates="bidder")
+    auctions: WriteOnlyMapped["Auction"] = relationship(back_populates="auction_owner")
 
     @property
     def user_role(self) -> UserRole:
@@ -53,38 +53,31 @@ class Session(Base):
     user: Mapped["User"] = relationship(back_populates="sessions")
 
 
-class Booking(Base):
-    __tablename__ = "bookings"
-
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    reserved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.now)
-    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
-    canceled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    ticket_price: Mapped[float] = mapped_column()
-    status: Mapped[str] = mapped_column()
-
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    user: Mapped[User] = relationship(back_populates="bookings")
-
-    seat_id: Mapped[UUID] = mapped_column(ForeignKey("seats.id", ondelete="SET NULL"), nullable=True)
-
-    __table_args__ = (
-        Index(
-            "uc_seat_id_status",
-            "status",
-            "seat_id",
-            unique=True,
-            postgresql_where=((status == BookingStatus.PENDING.value) | (status == BookingStatus.CONFIRMED.value)),
-        ),
-    )
-
-
-class Seat(Base):
-    __tablename__ = "seats"
+class Auction(Base):
+    __tablename__ = "auctions"
 
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column()
+    status: Mapped[str] = mapped_column()
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    is_booked: Mapped[bool] = mapped_column(server_default=text("false"))
-    is_held: Mapped[bool] = mapped_column(server_default=text("false"))
+    auction_owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    auction_owner: Mapped[User] = relationship(back_populates="auctions")
+
+    bids: WriteOnlyMapped["Bid"] = relationship(back_populates="auction")
+
+
+class Bid(Base):
+    __tablename__ = "bids"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    amount: Mapped[float] = mapped_column()
+    bid_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.now)
+
+    auction_id: Mapped[UUID] = mapped_column(ForeignKey("auctions.id", ondelete="SET NULL"), nullable=True)
+    auction: Mapped[Auction] = relationship(back_populates="bids")
+
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    bidder: Mapped[User] = relationship(back_populates="bids")
