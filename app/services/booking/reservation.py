@@ -32,9 +32,9 @@ class ReservationHoldout(BaseService):
 
         try:
             # STEP 2: ensure the record is available
-            is_held = await self._seat_repo.try_hold_seat(seat_id)
+            is_available = await self._seat_repo.try_hold_seat(seat_id)
 
-            if not is_held:
+            if not is_available:
                 raise HTTPException(detail="Seat is no longer available.", status_code=409)
 
             # STEP 3: lock the record for this user
