@@ -1,8 +1,8 @@
-"""init_bid_models
+"""init_models
 
-Revision ID: 64b69ef89a79
+Revision ID: 3ba6235fea06
 Revises: 
-Create Date: 2026-08-22 12:17:12.748437
+Create Date: 2026-09-04 12:31:20.842883
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '64b69ef89a79'
+revision: str = '3ba6235fea06'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -39,12 +39,12 @@ def upgrade() -> None:
     sa.Column('name', sa.String(), nullable=False),
     sa.Column('status', sa.String(), nullable=False),
     sa.Column('scheduled_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('ended_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('started_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('user_id', sa.UUID(), nullable=True),
+    sa.Column('ended_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('auction_owner_id', sa.UUID(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='SET NULL'),
+    sa.ForeignKeyConstraint(['auction_owner_id'], ['users.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('sessions',
@@ -69,14 +69,15 @@ def upgrade() -> None:
     op.create_table('bids',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('amount', sa.Float(), nullable=False),
-    sa.Column('bid_timestamp', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('bid_seq', sa.String(), nullable=False),
     sa.Column('auction_id', sa.UUID(), nullable=True),
     sa.Column('user_id', sa.UUID(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['auction_id'], ['auctions.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='SET NULL'),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('bid_seq')
     )
     # ### end Alembic commands ###
 

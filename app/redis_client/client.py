@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+
 class RedisClientConfig(BaseModel):
     host: Optional[str] = Field(default="localhost")
     password: Optional[str] = Field(default=None)
@@ -155,3 +156,33 @@ class RedisClient:
             Number of existing keys
         """
         return await self.client.exists(*keys)
+
+    async def xackdel(self, stream_key: str, group_name: str, message_ids: list[str]) -> bool:
+        try:
+            XACK_DEL = """
+                - KEYS[1]: Stream key name
+                -- ARGV[1]: Consumer group name
+                -- ARGV[2...N]: Stream Message IDs
+
+                local stream_key = KEYS[1]
+                local group_name = ARGV[1]
+                local ids = {}
+
+                for i = 2, #ARGV do
+                    table.insert(ids, ARGV[i])
+                end
+
+                if #ids == 0 then
+                    return 0
+                end
+
+                -- Unpack table to execute XACK and XDEL in bulk
+                local acked = redis.call('XACK', stream_key, group_name, unpack(ids))
+                local deleted = redis.call('XDEL', stream_key, unpack(ids))
+
+                return {acked, deleted}
+            """
+            return bool(await self._client.eval(XACK_DEL, 1, stream_key, group_name, *message_ids))
+        except Exception as e:
+            logger.exception(f"[Redis XACK]: failed to delete {str(e)}")
+            return False

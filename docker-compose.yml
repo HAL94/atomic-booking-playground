@@ -16,7 +16,7 @@ services:
     env_file:
       - ./.env
     ports:
-    - "8000:8000"
+      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,12 +58,27 @@ services:
       - fast_network
 
   redis:
-    image: redis:latest
+    image: redis:8.10.0
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     ports:
       - 6380:6379
     networks:
       - fast_network
 
+  app_workers:
+    <<: *backend
+    command: ["uv", "run", "-m", "app.jobs.workers"]
+    env_file:
+      - ./.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - fast_network
 networks:
   fast_network:
     driver: bridge

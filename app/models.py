@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, WriteOnlyMapped, mapped_column, relationship
 
@@ -74,10 +74,23 @@ class Bid(Base):
 
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     amount: Mapped[float] = mapped_column()
-    bid_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.now)
+    bid_ts: Mapped[int] = mapped_column(BigInteger())
+    bid_seq: Mapped[int] = mapped_column(BigInteger())
 
     auction_id: Mapped[UUID] = mapped_column(ForeignKey("auctions.id", ondelete="SET NULL"), nullable=True)
     auction: Mapped[Auction] = relationship(back_populates="bids")
 
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     bidder: Mapped[User] = relationship(back_populates="bids")
+
+    __table_args__ = (UniqueConstraint("bid_ts", "bid_seq", name="ux_bid_ts_seq"),)
+
+    @property
+    def bid_timestamp(self) -> datetime | None:
+        if not self.bid_seq:
+            return None
+        try:
+            bid_timestmap = float(self.bid_seq.split("-")[0])
+            return datetime.fromtimestamp(bid_timestmap / 1000.0)
+        except Exception:
+            return None

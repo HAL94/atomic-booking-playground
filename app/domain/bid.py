@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import ClassVar, Optional
 from uuid import UUID
 
@@ -13,4 +12,5 @@ class BidBase(BaseDomain):
 
     id: Optional[UUID | str] = Field(default=None)
     amount: float
-    bid_timestamp: datetime
+    bid_ts: Optional[int] = Field(default=None)
+    bid_seq: Optional[int] = Field(default=None)
