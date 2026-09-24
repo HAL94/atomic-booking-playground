@@ -12,5 +12,5 @@ class BidBase(BaseDomain):
 
     id: Optional[UUID | str] = Field(default=None)
     amount: float
-    bid_ts: Optional[int] = Field(default=None)
-    bid_seq: Optional[int] = Field(default=None)
+    auction_id: UUID | str
+    user_id: UUID | str

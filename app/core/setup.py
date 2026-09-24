@@ -11,8 +11,11 @@ from app.api import api_router
 from app.core.config import Settings, get_settings
 from app.core.database import session_manager
 from app.core.exceptions import AppException
+from app.core.logging import configure_logging
 from app.dependencies.redis import get_redis_client
 from app.models import *  # noqa: F403
+
+configure_logging()
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.ERROR)
