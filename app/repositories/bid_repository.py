@@ -1,15 +1,14 @@
 import logging
-from datetime import datetime, timezone
+import uuid
+import zlib
 from typing import Any, ClassVar
 
-from fastapi import HTTPException
-from sqlalchemy import UUID, cast, func, insert, literal, select
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy import UUID, cast, func, insert, literal, select, text, update
 
 from app.core.exceptions import BadRequestException, NotFoundException
 from app.domain.bid import BidBase
 from app.dto.bid import CreateAuctionBid
-from app.models import Auction, AuctionWinner, Bid
+from app.models import Auction, Bid
 from app.repositories.base_repository import BaseRepository
 
 logger = logging.getLogger(__name__)
@@ -23,23 +22,65 @@ class BidRepository(BaseRepository[BidBase, Bid]):
             return as_domain.model_validate(data, from_attributes=True)
         return BidBase.model_validate(data, from_attributes=True)
 
+    def uuid_to_lock_id(self, uuid_val: UUID) -> int:
+        """Converts a UUID into a deterministic 64-bit integer lock key."""
+        # Using CRC32 or hashing to convert UUID bytes into a 64-bit integer
+        return zlib.crc32(uuid_val.bytes)
+
+    async def insert_bid_with_advisory_lock(self, payload: CreateAuctionBid) -> Any:
+        # 1. Generate deterministic 64-bit lock key for this specific auction
+        lock_key = self.uuid_to_lock_id(uuid.UUID(payload.auction_id))
+
+        # 2. Acquire transaction-level advisory lock
+        # This blocks other concurrent transactions for the SAME auction until this transaction commits/rolls back.
+        await self.session.execute(
+            select(func.pg_advisory_xact_lock(lock_key))
+        )
+
+        # 3. Read the latest highest bid (No row lock needed now!)
+        current_highest = (
+            await self.session.execute(
+                select(func.coalesce(Auction.highest_bid, 0.0)).where(Auction.id == payload.auction_id)
+            )
+        ).scalar_one()
+
+        # 4. Guard check
+        if payload.bid_amount < (current_highest + 1.0):
+            await self.session.rollback()  # Releases lock immediately
+            return None
+
+        # 5. Insert Bid
+        bid_stmt = (
+            insert(Bid)
+            .values(
+                amount=payload.bid_amount,
+                auction_id=payload.auction_id,
+                user_id=payload.user_id,
+                created_at=func.clock_timestamp(),
+            )
+            .returning(Bid)
+        )
+        bid_result = (await self.session.execute(bid_stmt)).scalar_one()
+
+        # 6. Update Auction cached highest bid
+        await self.session.execute(
+            update(Auction)
+            .values(highest_bid=payload.bid_amount)
+            .where(Auction.id == payload.auction_id)
+        )
+
+        # 7. Commit transaction (Automatically releases pg_advisory_xact_lock)
+        await self.session.commit()
+
+        return self.domain_model(bid_result)
+
     async def insert_bid_by_sql_check(self, payload: CreateAuctionBid) -> Any:
         """
         Attempt to insert with one query
         """
         # 1. Lock parent auction row inside CTE
         lock_auction_cte = (
-            select(Auction.id)
-            .where(Auction.id == payload.auction_id)
-            .with_for_update()
-            .cte("locked_auction")
-        )
-
-        # 2. Compute current max bid AFTER lock is acquired
-        max_stmt = (
-            select(func.coalesce(func.max(Bid.amount), 0).label("max_val"))
-            .where(Bid.auction_id == payload.auction_id)
-            .scalar_subquery()
+            select(Auction).where(Auction.id == payload.auction_id).with_for_update().cte("locked_auction")
         )
 
         # 3. Guard insertion against locked max
@@ -48,22 +89,29 @@ class BidRepository(BaseRepository[BidBase, Bid]):
                 literal(payload.bid_amount),
                 cast(literal(payload.auction_id), UUID),
                 cast(literal(payload.user_id), UUID),
+                func.clock_timestamp(),
             )
             .select_from(lock_auction_cte)  # Forces lock execution first
-            .where(literal(payload.bid_amount) >= max_stmt + 1)
+            .where(
+                literal(payload.bid_amount) >= (func.coalesce(lock_auction_cte.c.highest_bid, 0) + 1),
+            )
         )
 
         insert_stmt = (
-            insert(Bid)
-            .from_select(["amount", "auction_id", "user_id"], payload_stmt)
-            .returning(Bid)
+            insert(Bid).from_select(["amount", "auction_id", "user_id", "created_at"], payload_stmt).returning(Bid)
         )
 
         bid_result = (await self.session.execute(insert_stmt)).scalar_one_or_none()
-        await self.session.commit()
 
         if not bid_result:
+            await self.session.rollback()
             return None  # Price was out-of-date or invalid
+
+        await self.session.execute(
+            update(Auction).values(highest_bid=bid_result.amount).where(Auction.id == payload.auction_id)
+        )
+
+        await self.session.commit()
 
         return self.domain_model(bid_result)
 
@@ -71,50 +119,30 @@ class BidRepository(BaseRepository[BidBase, Bid]):
         """
         Attempt to insert a bid with contention in mind for locking
         """
-        auction_top_query = (
-            select(Auction, AuctionWinner, Bid)
-            .join(AuctionWinner, AuctionWinner.auction_id == Auction.id, isouter=True)
-            .join(Bid, AuctionWinner.bid_id == Bid.id, isouter=True)
-            .where(Auction.id == payload.auction_id)
-            .with_for_update(of=[Auction])
-        )
+        await self.session.execute(text("SET LOCAL lock_timeout = '500ms';"))
+
+        auction_top_query = select(Auction).where(Auction.id == payload.auction_id).with_for_update()
 
         auction_res = await self.session.execute(auction_top_query)
-        auction_res = auction_res.mappings().one_or_none()
-
-        if not auction_res:
-            raise NotFoundException("Auction not found")
-
-        # logger.info(f"[InsertBid] auction result: {auction_res}")
-
-        auction, auction_winner, highest_bid = (
-            auction_res["Auction"],
-            auction_res["AuctionWinner"],
-            auction_res["Bid"],
-        )
+        auction = auction_res.scalar_one_or_none()
 
         if not auction:
+            logger.info("[InsertBid] auction not found...")
             raise NotFoundException("Auction not found")
 
-        auction_track = auction_winner
         bid = Bid(amount=payload.bid_amount, auction_id=payload.auction_id, user_id=payload.user_id)
+        highest_bid = auction.highest_bid
 
         if highest_bid:
-            min_required = highest_bid.amount + 1.0
-            max_allowed = highest_bid.amount + 100.0
+            min_required = highest_bid + 1.0
+            max_allowed = highest_bid + 100.0
 
             if payload.bid_amount < min_required or payload.bid_amount > max_allowed:
+                logger.info(f"[InsertBid] bid is not allowed...{min_required} - {max_allowed}")
                 raise BadRequestException(f"Bid amount must be between {min_required} and {max_allowed}")
 
+        logger.info(f"[InsertBid] inserting bid {payload.bid_amount}")
+        auction.highest_bid = payload.bid_amount
         self.session.add(bid)
-        await self.session.flush()
-
-        if auction_track:
-            auction_track.winning_bid = bid
-            auction_track.updated_at = datetime.now(tz=timezone.utc)
-        else:
-            auction_track = AuctionWinner(auction_id=payload.auction_id, winning_bid=bid)
-            self.session.add(auction_track)
-
         await self.session.commit()
         return self.domain_model(bid)

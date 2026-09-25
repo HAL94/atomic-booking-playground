@@ -21,4 +21,4 @@ class BidService(BaseService):
     async def create_bid(self, payload: CreateAuctionBid) -> BidBase:
         # check for existance, method throws NotFoundException
         await self._auction_repo.get_one([Auction.id == payload.auction_id])
-        return await self._bid_repo.insert_bid_by_sql_check(payload)
+        return await self._bid_repo.insert_bid_with_advisory_lock(payload)

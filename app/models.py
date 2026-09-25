@@ -2,7 +2,18 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Identity,
+    Sequence,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, WriteOnlyMapped, mapped_column, relationship
 
@@ -62,24 +73,12 @@ class Auction(Base):
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    highest_bid: Mapped[float] = mapped_column(nullable=True)
 
     auction_owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     auction_owner: Mapped[User] = relationship(back_populates="auctions")
 
     bids: WriteOnlyMapped["Bid"] = relationship(back_populates="auction")
-
-    auction_winner: Mapped["AuctionWinner"] = relationship(back_populates="auction", uselist=False)
-
-
-class AuctionWinner(Base):
-    __tablename__ = "auction_winners"
-
-    auction_id: Mapped[UUID] = mapped_column(ForeignKey("auctions.id"), primary_key=True)
-    bid_id: Mapped[UUID] = mapped_column(ForeignKey("bids.id"), primary_key=True)
-
-    auction: Mapped[Auction] = relationship(back_populates="auction_winner")
-    winning_bid: Mapped["Bid"] = relationship(back_populates="auction_winner")
-
 
 class Bid(Base):
     __tablename__ = "bids"
@@ -90,7 +89,7 @@ class Bid(Base):
     auction_id: Mapped[UUID] = mapped_column(ForeignKey("auctions.id", ondelete="SET NULL"), nullable=True)
     auction: Mapped[Auction] = relationship(back_populates="bids")
 
+    bid_seq: Mapped[int] = mapped_column(Identity("bid_seq", start=1, increment=1), unique=True)
+
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     bidder: Mapped[User] = relationship(back_populates="bids")
-
-    auction_winner: Mapped["AuctionWinner"] = relationship(back_populates="winning_bid", uselist=False)
