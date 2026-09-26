@@ -50,8 +50,6 @@ class BookingService(BaseService):
             payload_update_stmt = select(
                 func.gen_random_uuid(), seat_update_cte.c.id, cast(literal(user_id), UUID), hold_expiration
             )
-
-            hold_expiration = datetime.now(tz=timezone.utc) + timedelta(seconds=20)
             update_stmt = pg_insert(SeatHold).from_select(
                 ["id", "seat_id", "user_id", "expires_at"], payload_update_stmt
             )
