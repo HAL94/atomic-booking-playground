@@ -43,7 +43,7 @@ configure_logging()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-ITEM_ID = "49ad097a-0029-4b74-baa4-81ffadb52750"
+ITEM_ID = "05b42ace-71c3-4172-b2d8-9d608cf93dab"
 
 
 @dataclass

@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import UUID, and_, cast, delete, func, insert, literal, or_, select, update
+from sqlalchemy import UUID, and_, cast, delete, func, insert, literal, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.domain.seat_hold import SeatHoldBase
@@ -31,26 +31,42 @@ class BookingService(BaseService):
             # 1. determine if seat is available
             # 2. if not available, simply return
             # 3. if available, create hold record. Then set status to HELD
-            stmt_seat_hold = select(Seat).where(Seat.id == seat_id, Seat.status != SeatStatus.BOOKED).with_for_update()
+            seat_cte = (
+                select(Seat)
+                .where(Seat.id == seat_id, Seat.status != SeatStatus.BOOKED)
+                .with_for_update()
+                .cte("seat_cte")
+            )
 
-            seat = (await self.session.execute(stmt_seat_hold)).scalar_one_or_none()
-            # logger.info(f"[InsertSeatHold] seat {seat}")
+            seat_update_cte = (
+                update(Seat)
+                .values(status=SeatStatus.HELD)
+                .where(Seat.id.in_(select(seat_cte.c.id)))
+                .returning(Seat.id)
+                .cte("seat_update_cte")
+            )
 
-            if not seat:
-                raise HTTPException(status_code=409, detail="Could not hold seat")
-
-            stmt_seat_hold = select(SeatHold).where(SeatHold.seat_id == seat_id).with_for_update()
-            seat_hold = (await self.session.execute(stmt_seat_hold)).scalar_one_or_none()
-
-            if seat_hold and seat_hold.expires_at > datetime.now(tz=timezone.utc):
-                raise HTTPException(status_code=409, detail="Seat is already taken")
+            hold_expiration = func.clock_timestamp() + text("INTERVAL '20 seconds'")
+            payload_update_stmt = select(
+                func.gen_random_uuid(), seat_update_cte.c.id, cast(literal(user_id), UUID), hold_expiration
+            )
 
             hold_expiration = datetime.now(tz=timezone.utc) + timedelta(seconds=20)
-            update_stmt = pg_insert(SeatHold).values(seat_id=seat_id, user_id=user_id, expires_at=hold_expiration)
-            update_stmt = update_stmt.on_conflict_do_update(index_elements=["seat_id"], set_={**update_stmt.excluded})
+            update_stmt = pg_insert(SeatHold).from_select(
+                ["id", "seat_id", "user_id", "expires_at"], payload_update_stmt
+            )
+            update_stmt = update_stmt.on_conflict_do_update(
+                index_elements=["seat_id"],
+                set_={**update_stmt.excluded},
+                where=(SeatHold.expires_at <= func.clock_timestamp()),
+            )
             update_stmt = update_stmt.returning(SeatHold)
-
             seat_hold = (await self.session.execute(update_stmt)).scalar_one_or_none()
+
+            if not seat_hold:
+                await self.session.rollback()
+                raise HTTPException(status_code=409, detail="Seat is already taken")
+
             await self.session.commit()
 
             return self._hold_repo.domain_model(seat_hold)

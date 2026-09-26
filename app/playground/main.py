@@ -44,14 +44,20 @@ async def upsert_seats() -> list[SeatBase]:
         seat_repo = SeatRepository(session)
         letters = ["A", "B", "C", "D", "E"]
         nums = ["1", "2", "3", "4", "5"]
+        ids = [
+            uuid.UUID("05b42ace-71c3-4172-b2d8-9d608cf93dab"),
+            uuid.UUID("a825958c-4b13-40f2-a783-3c4ee932e74b"),
+            uuid.UUID("4f9b0e7c-6d58-40be-922f-f472d472591c"),
+            uuid.UUID("3d1222bb-2bbe-4569-b6fc-7028fe16b8b9"),
+            uuid.UUID("7dcf4e26-cb98-4321-8cef-acd3e082821c"),
+        ]
 
         seats = [
-            SeatBase(id=str(uuid.uuid4()), name=letter + num, status=SeatStatus.AVAILABLE)
-            for letter, num in zip(letters, nums)
+            SeatBase(id=str(seat_id), name=letter + num, status=SeatStatus.AVAILABLE)
+            for letter, num, seat_id in zip(letters, nums, ids)
         ]
 
         return await seat_repo.upsert(seats, ["name"], commit=True)
-
 
 
 async def main_pg():
