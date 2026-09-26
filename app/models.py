@@ -3,22 +3,19 @@ from typing import List, Optional
 from uuid import uuid4
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
-    Identity,
-    Sequence,
+    Index,
     String,
     Text,
-    UniqueConstraint,
-    func,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, WriteOnlyMapped, mapped_column, relationship
 
 from app.constants.roles import UserRole
 from app.core.database import Base
+from app.dto.seat import SeatStatus
 
 
 class User(Base):
@@ -34,8 +31,7 @@ class User(Base):
 
     # Relations
     sessions: Mapped[List["Session"]] = relationship(back_populates="user", cascade="all, delete")
-    bids: WriteOnlyMapped["Bid"] = relationship(back_populates="bidder")
-    auctions: WriteOnlyMapped["Auction"] = relationship(back_populates="auction_owner")
+    holds: WriteOnlyMapped["SeatHold"] = relationship(back_populates="seat_holder")
 
     @property
     def user_role(self) -> UserRole:
@@ -64,32 +60,25 @@ class Session(Base):
     user: Mapped["User"] = relationship(back_populates="sessions")
 
 
-class Auction(Base):
-    __tablename__ = "auctions"
+class Seat(Base):
+    __tablename__ = "seats"
 
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    name: Mapped[str] = mapped_column()
+    name: Mapped[str] = mapped_column(unique=True)
     status: Mapped[str] = mapped_column()
-    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
-    highest_bid: Mapped[float] = mapped_column(nullable=True)
+    # can add other foreign keys to link for events/avenues/showrooms etc.. keep it simple for now
 
-    auction_owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    auction_owner: Mapped[User] = relationship(back_populates="auctions")
+    holds: WriteOnlyMapped["SeatHold"] = relationship(back_populates="seat")
 
-    bids: WriteOnlyMapped["Bid"] = relationship(back_populates="auction")
 
-class Bid(Base):
-    __tablename__ = "bids"
+class SeatHold(Base):
+    __tablename__ = "seat_holds"
 
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    amount: Mapped[float] = mapped_column()
+    seat_id: Mapped[UUID] = mapped_column(ForeignKey("seats.id", ondelete="CASCADE"), unique=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
-    auction_id: Mapped[UUID] = mapped_column(ForeignKey("auctions.id", ondelete="SET NULL"), nullable=True)
-    auction: Mapped[Auction] = relationship(back_populates="bids")
+    seat: Mapped[Seat] = relationship(back_populates="holds")
+    seat_holder: Mapped[User] = relationship(back_populates="holds")
 
-    bid_seq: Mapped[int] = mapped_column(Identity("bid_seq", start=1, increment=1), unique=True)
-
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    bidder: Mapped[User] = relationship(back_populates="bids")

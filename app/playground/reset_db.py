@@ -1,13 +1,11 @@
 import asyncio
 import logging
 
-from sqlalchemy import delete, text, update
+from sqlalchemy import delete
 
 from app.core.database import session_manager
 from app.core.logging import configure_logging
-from app.models import Auction, Bid
-
-AUCTION_ID = "6b91fa86-c200-4845-94f0-b221b2065e21"
+from app.models import SeatHold
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -16,19 +14,17 @@ logger.setLevel(logging.INFO)
 
 async def reset_db():
     """
-    Remove bid records and reset redis
+    Remove seat hold records
     """
     try:
         async with session_manager.session() as session:
-            await session.execute(text('TRUNCATE TABLE bids RESTART IDENTITY;'))
-            await session.execute(update(Auction).where(Auction.id == AUCTION_ID).values(highest_bid=None))
-            await session.execute(delete(Bid))
+            await session.execute(delete(SeatHold))
             await session.commit()
 
-        logger.info("[BidsSimulation]: successfully reset bids")
+        logger.info("[SeatSimulation]: successfully reset seat holds")
 
     except Exception as e:
-        logger.exception(f"[BidsSimulation]: failed to reset bids and redis {str(e)}")
+        logger.exception(f"[SeatSimulation]: failed to reset seat holds {str(e)}")
         raise e
 
 
