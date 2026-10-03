@@ -261,6 +261,18 @@ wheels = [
 ]
 
 [[package]]
+name = "faker-commerce"
+version = "1.0.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "faker" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/db/af/02de5839967ec49d24d825664b0740e0e2dc278ff24f05f24d7d9bfdbe76/faker-commerce-1.0.4.tar.gz", hash = "sha256:f53da04143ab70754493fa97c0c64f5208c8f8f3c50273516ee3cafcea372953", size = 3076, upload-time = "2024-04-04T10:34:48.264Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6c/7b/f6d3f054a77ea48caaec8170bceac71c0aec54d94729b9f66ebd1fcc8fe1/faker_commerce-1.0.4-py3-none-any.whl", hash = "sha256:6780fe30801aac399a64d421cd85c4593f7cd54d838cb400e8d31e463722622c", size = 3279, upload-time = "2024-04-04T10:34:46.811Z" },
+]
+
+[[package]]
 name = "fast-mv-reserve2"
 version = "0.1.0"
 source = { virtual = "." }
@@ -268,6 +280,7 @@ dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "faker" },
+    { name = "faker-commerce" },
     { name = "fastapi", extra = ["standard"] },
     { name = "itsdangerous" },
     { name = "passlib", extra = ["bcrypt"] },
@@ -296,6 +309,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.16.4" },
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "faker", specifier = ">=37.4.0" },
+    { name = "faker-commerce", specifier = ">=1.0.4" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.116.0" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
     { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },
