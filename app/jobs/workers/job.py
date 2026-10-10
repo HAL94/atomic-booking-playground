@@ -74,15 +74,29 @@ class IntervalJob(IJob):
         # Used for intervals
         self.seconds = seconds
         self.args = args
+        self._on_start: Optional[Callable[..., Awaitable[Any]]] = None
         self.kwargs = kwargs
+
+    async def on_start(self, handler: Callable[..., Awaitable[Any]], *args, **kwargs) -> None:
+        if not handler:
+            return None
+
+        async def handler_wrapper():
+            return await handler(*args, **kwargs)
+
+        self._on_start = handler_wrapper
 
     def set_interval(self, seconds: int = 10) -> Any:
         self.seconds = seconds
 
-    async def execute(self, shutdown_event: asyncio.Event, worker_id: int):
+    async def execute(self, shutdown_event: asyncio.Event, worker_id: str):
         if not self.job_task:
             raise ValueError("[Job]: job task was not passed")
 
+        if self._on_start:
+            await self._on_start()
+
+        logger.info(f"Attempting to execute job for worker {worker_id}")
         while not shutdown_event.is_set():
             try:
                 await self.job_task(worker_id, *self.args, **self.kwargs)
@@ -95,5 +109,4 @@ class IntervalJob(IJob):
                 break
             except Exception as e:
                 logger.exception(f"Error in background sweeper loop: {e}")
-        if shutdown_event.is_set():
-            logger.info(f"[Worker {worker_id}] shutdown event is set..clearing.. ")
+        logger.info(f"[Worker {worker_id}] shutdown event is set..clearing.. ")

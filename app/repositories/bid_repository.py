@@ -1,5 +1,4 @@
 import logging
-import uuid
 import zlib
 from typing import Any, ClassVar
 
@@ -7,8 +6,10 @@ from sqlalchemy import UUID, cast, func, insert, literal, select, text, update
 
 from app.core.exceptions import BadRequestException, NotFoundException
 from app.domain.bid import BidBase
+from app.domain.bid_inbox import BidInboxBase
+from app.domain.bid_status import BidStatus
 from app.dto.bid import CreateAuctionBid
-from app.models import Auction, Bid
+from app.models import Auction, Bid, BidInbox
 from app.repositories.base_repository import BaseRepository
 
 logger = logging.getLogger(__name__)
@@ -27,52 +28,16 @@ class BidRepository(BaseRepository[BidBase, Bid]):
         # Using CRC32 or hashing to convert UUID bytes into a 64-bit integer
         return zlib.crc32(uuid_val.bytes)
 
-    async def insert_bid_with_advisory_lock(self, payload: CreateAuctionBid) -> Any:
+    async def insert_bid_to_inbox(self, payload: CreateAuctionBid) -> BidInboxBase:
         # 1. Generate deterministic 64-bit lock key for this specific auction
-        lock_key = self.uuid_to_lock_id(uuid.UUID(payload.auction_id))
-
-        # 2. Acquire transaction-level advisory lock
-        # This blocks other concurrent transactions for the SAME auction until this transaction commits/rolls back.
-        await self.session.execute(
-            select(func.pg_advisory_xact_lock(lock_key))
+        payload_bid = BidInboxBase(
+            auction_id=payload.auction_id, user_id=payload.user_id, amount=payload.bid_amount, status=BidStatus.PENDING
         )
-
-        # 3. Read the latest highest bid (No row lock needed now!)
-        current_highest = (
-            await self.session.execute(
-                select(func.coalesce(Auction.highest_bid, 0.0)).where(Auction.id == payload.auction_id)
-            )
-        ).scalar_one()
-
-        # 4. Guard check
-        if payload.bid_amount < (current_highest + 1.0):
-            await self.session.rollback()  # Releases lock immediately
-            return None
-
-        # 5. Insert Bid
-        bid_stmt = (
-            insert(Bid)
-            .values(
-                amount=payload.bid_amount,
-                auction_id=payload.auction_id,
-                user_id=payload.user_id,
-                created_at=func.clock_timestamp(),
-            )
-            .returning(Bid)
+        bid_inbox_created = await self.session.scalar(
+            insert(BidInbox).values(payload_bid.model_dump(exclude_none=True)).returning(BidInbox)
         )
-        bid_result = (await self.session.execute(bid_stmt)).scalar_one()
-
-        # 6. Update Auction cached highest bid
-        await self.session.execute(
-            update(Auction)
-            .values(highest_bid=payload.bid_amount)
-            .where(Auction.id == payload.auction_id)
-        )
-
-        # 7. Commit transaction (Automatically releases pg_advisory_xact_lock)
         await self.session.commit()
-
-        return self.domain_model(bid_result)
+        return BidInboxBase.model_validate(bid_inbox_created, from_attributes=True)
 
     async def insert_bid_by_sql_check(self, payload: CreateAuctionBid) -> Any:
         """

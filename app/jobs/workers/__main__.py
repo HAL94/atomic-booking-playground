@@ -3,9 +3,8 @@ import logging
 import signal
 
 from app.core.logging import configure_logging
-from app.dependencies.redis import get_redis_client
 from app.jobs.workers.bid_loop import bid_processor_loop
-from app.jobs.workers.job import BasicJob
+from app.jobs.workers.job import IntervalJob
 from app.jobs.workers.manager import InProcessWorkerManager
 
 configure_logging()
@@ -15,10 +14,7 @@ shutdown_event: asyncio.Event = asyncio.Event()
 
 
 async def start_workers():
-    redis = get_redis_client()
-    await redis.connect()
-    bid_job = BasicJob(bid_processor_loop, redis)
-
+    bid_job = IntervalJob(job_task=bid_processor_loop, seconds=10)
     workers = InProcessWorkerManager(shutdown_event, [bid_job])
     loop = asyncio.get_running_loop()
 

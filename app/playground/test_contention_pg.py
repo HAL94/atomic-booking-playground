@@ -4,15 +4,12 @@ import random
 import time
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
-
 from app.core.database import session_manager
 from app.core.logging import configure_logging
 from app.core.security.jwt import hash_password
 from app.domain.auth import UserBase
 from app.dto.bid import CreateAuctionBid
-from app.models import Auction, AuctionWinner
+from app.models import Auction
 from app.playground.reset_db import reset_db
 from app.repositories.user_repository import UserRepository
 from app.services.bid.service import BidService

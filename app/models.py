@@ -3,15 +3,12 @@ from typing import List, Optional
 from uuid import uuid4
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
     Identity,
-    Sequence,
     String,
     Text,
-    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -19,6 +16,7 @@ from sqlalchemy.orm import Mapped, WriteOnlyMapped, mapped_column, relationship
 
 from app.constants.roles import UserRole
 from app.core.database import Base
+from app.domain.bid_status import BidStatus
 
 
 class User(Base):
@@ -80,6 +78,7 @@ class Auction(Base):
 
     bids: WriteOnlyMapped["Bid"] = relationship(back_populates="auction")
 
+
 class Bid(Base):
     __tablename__ = "bids"
 
@@ -93,3 +92,13 @@ class Bid(Base):
 
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     bidder: Mapped[User] = relationship(back_populates="bids")
+
+
+class BidInbox(Base):
+    __tablename__ = "bids_inbox"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    auction_id: Mapped[UUID] = mapped_column(ForeignKey("auctions.id"))
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    amount: Mapped[float] = mapped_column()
+    status: Mapped[str] = mapped_column(default=BidStatus.PENDING)
